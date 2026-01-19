@@ -1,0 +1,10 @@
+<launch>
+    <node name="lidar_movement_arbiter" pkg="ros_closed_loop_control" type="lidar_movement_arbiter.py" output = "screen"/>
+    <node name="lidar_obstacle_mgmt" pkg="ros_closed_loop_control" type="lidar_obstacle_mgmt.py" output = "screen"/>
+    <node name="controller_node" pkg="ros_closed_loop_control" type="controller_node.py" output = "screen"/>
+    <param name="front_min_angle" value="-30"/>
+    <param name="front_max_angle" value="30"/>
+    <param name="stop_distance" value="0.9"/>
+    <param name="safe_distance" value="1.5"/>
+    <param name="moving_speed" value="5.0"/>
+</launch>

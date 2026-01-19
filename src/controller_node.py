@@ -95,12 +95,12 @@ def publish_waypoints(waypoints, frame="odom"):
     marker_pub.publish(marker)
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     try:
         rospy.init_node("Controller_node")
         main_node_rate = rospy.Rate(10)
         main_subs = rospy.Subscriber("/odom",Odometry,mainsubscallback)
-        main_publ = rospy.Publisher("/cmd_vel",Twist,queue_size=10)
+        main_publ = rospy.Publisher("/desired_cmd_vel",Twist,queue_size=10)
         marker_pub = rospy.Publisher("/waypoints", Marker, queue_size=1,latch = True)
         rospy.on_shutdown(stop_robot)
         k_linear = 1.5
@@ -137,10 +137,10 @@ if __name__=="__main__":
                         elif Robot_Motion_state == "STOP":
                             velocity.linear.x = 0.0
                             velocity.angular.z = 0.0
-                        if abs(angle_error) > angle_tolerance:
-                            Robot_Motion_state = "ROTATE"
-                        elif distance_error > distance_tolerance:
+                        if abs(angle_error) < angle_tolerance:
                             Robot_Motion_state = "MOVE_FORWARD"
+                        elif distance_error > distance_tolerance:
+                            Robot_Motion_state = "ROTATE"
                         else:
                             current_target_index+=1
                     else:
