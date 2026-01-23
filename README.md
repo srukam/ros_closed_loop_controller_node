@@ -1,17 +1,24 @@
-# LiDAR-Based Safety Controller with Arbiter (ROS)
+# Behavior-Level Autonomous Navigation with Perception–Control Arbitration (ROS)
 
 ## Overview
 
-This project implements a **reactive LiDAR-based safety layer** for a mobile robot using ROS. The system
-monitors obstacles in the robot’s forward arc and dynamically **stops, slows, or allows motion** based on
-distance and time-to-collision (TTC) metrics.
+This project implements a **behavior-level autonomy stack** for a mobile robot using ROS.
+It combines waypoint-based motion control with a **reactive LiDAR safety layer** and a
+deterministic **velocity arbiter / finite-state behavior layer**.
 
-The safety logic is **decoupled** from motion planning via a velocity arbiter, making the architecture modular,
-debuggable, and extensible.
+The system cleanly separates **motion generation**, **safety enforcement**, and
+**command arbitration**, allowing the robot to stop, slow, or proceed safely in the
+presence of obstacles while remaining debuggable, testable, and extensible.
 
 ## Key Features
 
 ```
+Controller Node ──► /desired_cmd_vel ──┐
+├─► Velocity Arbiter ──► /cmd_vel
+LiDAR Safety Node ─► /safety_cmd_vel ──┘
+▲
+│
+/robot_state
 Forward-arc LiDAR obstacle detection
 Distance-based stopping and speed scaling
 Hysteresis to prevent oscillatory behavior
@@ -28,74 +35,63 @@ Runtime-tunable ROS parameters
 Generates waypoint-based motion (square / figure-8)
 Publishes desired velocity on /desired_cmd_vel
 Pure motion logic (no obstacle awareness)
+Publishes waypoint markers for RViz
 ```
 ### 2. LiDAR Safety Node (lidar_obstacle_mgmt.py)
 
 ```
 Subscribes to /scan
-Computes minimum distance in front arc
-Estimates Time-To-Collision (TTC)
-Publishes safety-limited velocity on /safety_cmd_vel
-Visualizes monitored front arc in RViz
+Extracts front-arc LiDAR data
+Computes minimum obstacle distance
+Estimates Time-To-Collision (TTC) using current speed
+Applies distance + TTC based speed limiting
+Publishes safety velocity on /safety_cmd_vel
+Visualizes front safety arc in RViz
 ```
 ### 3. Velocity Arbiter (lidar_movement_arbiter.py)
 
 ```
 Subscribes to /desired_cmd_vel and /safety_cmd_vel
-Publishes final /cmd_vel
-Enforces safety by limiting linear velocity
+Publishes final velocity on /cmd_vel
+Always enforces safety by limiting linear speed
+Publishes high-level robot state on /robot_state
+States: IDLE, MOVE, SLOW, STOP
 ```
 #### • • • • • • • • • • • • • • • • • •
 
 
 ## Safety Logic Summary
 
-The robot’s forward speed is determined by: - **Hard Stop** if: - Obstacle is closer than effective_stop, OR
+The robot’s forward velocity is determined using **distance** and
+**time-to-collision (TTC)** metrics.
 
-- TTC is below ttc_stop
+### Hard Stop
+- Obstacle distance ≤ effective_stop  
+- OR TTC ≤ ttc_stop  
 
-```
-Full Speed if:
-Obstacle is beyond safe_distance, AND
-```
-```
-TTC is above ttc_slow
-```
-```
-Scaled Speed otherwise, using the minimum of:
-```
-```
-Distance-based scaling
-TTC-based scaling
-```
+### Full Speed
+- Obstacle distance ≥ safe_distance  
+- AND TTC ≥ ttc_slow  
+
+### Scaled Speed
+- Otherwise, speed is scaled using the minimum of:
+  - Distance-based scaling
+  - TTC-based scaling
+
 This ensures smooth deceleration and prevents late braking at higher speeds.
 
 ## Parameters (ROS)
 
-```
-Parameter Description Example
-```
-```
-stop_distance Base stopping distance 0.
-```
-```
-safe_distance Distance to resume full speed 1.
-```
-```
-moving_speed Max allowed forward speed 0.
-```
-```
-front_min_angle Left bound of front arc (deg) -
-```
-```
-front_max_angle Right bound of front arc (deg) 30
-```
-```
-ttc_stop Emergency stop TTC (s) 1.
-```
-```
-ttc_slow Resume TTC (s) 2.
-```
+| Parameter        | Description                              | Example |
+|------------------|------------------------------------------|---------|
+| stop_distance    | Base stopping distance                   | 0.6     |
+| safe_distance    | Distance to resume full speed            | 1.2     |
+| moving_speed     | Maximum allowed forward speed            | 0.6     |
+| front_min_angle  | Left bound of front arc (degrees)        | -30     |
+| front_max_angle  | Right bound of front arc (degrees)       | 30      |
+| ttc_stop         | Emergency stop TTC threshold (seconds)   | 0.8     |
+| ttc_slow         | Resume TTC threshold (seconds)           | 1.5     |
+
 All parameters are configurable via launch files.
 
 ## Visualization
@@ -104,6 +100,11 @@ All parameters are configurable via launch files.
 Front safety arc displayed using visualization_msgs/Marker
 Waypoints rendered in RViz
 Color-coded arc indicates stop vs safe state
+
+## rosbag Support
+Records /cmd_vel, /safety_cmd_vel, /robot_state, /odom, /scan
+Allows offline debugging and deterministic replay
+Supports behavior validation without rerunning simulation
 ```
 #### • • • • • • • • •
 
@@ -111,9 +112,11 @@ Color-coded arc indicates stop vs safe state
 ## Design Decisions
 
 ```
-Safety logic is reactive , not predictive
-No trajectory rollout or curvature prediction
-TTC added as a lightweight improvement without planner coupling
+Safety always overrides motion commands
+Reactive logic favored over complex prediction
+Velocity arbitration instead of command cancellation
+Explicit state publication for observability
+Deterministic timers for repeatable behavior
 ```
 This keeps the system robust, simple, and easy to debug.
 
@@ -128,17 +131,17 @@ These are addressed in the next project.
 
 ## Next Planned Extension
 
-**Predictive Local Planner with Trajectory Collision Checking** - Forward simulation of motion - Curvature-
-aware safety checks - Planner-aware braking and re-planning
+**Predictive Local Planner with Trajectory Collision Checking** - 
+Forward simulation of motion - Curvature-aware safety checks - Planner-aware braking and re-planning
 
 ## Skills Demonstrated
 
 ```
-ROS node architecture & message flow
-LiDAR processing and filtering
-Real-time safety logic
-Velocity arbitration
-Debugging simulation timing and control issues
+ROS node architecture and message flow design
+LiDAR data processing and filtering
+Real-time safety and TTC-based control logic
+Velocity arbitration and behavior-level autonomy
+Simulation debugging and rosbag-based validation
 ```
 ## Status
 
