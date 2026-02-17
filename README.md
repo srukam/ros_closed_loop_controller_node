@@ -1,6 +1,8 @@
 # LiDAR-Based Safety Controller with Arbiter (ROS)
 
 ## Overview
+# Final Result
+![sample_results](Videos/Turtlebot3_robot_trajectory_follower.gif)
 
 This project implements a **reactive LiDAR-based safety layer** for a mobile robot using ROS. The system
 monitors obstacles in the robot’s forward arc and dynamically **stops, slows, or allows motion** based on
@@ -19,6 +21,12 @@ Time-To-Collision (TTC) based braking
 Velocity arbitration between controller and safety layer
 RViz visualization of safety arc and waypoints
 Runtime-tunable ROS parameters
+```
+
+**Demo:**
+```bash
+roslaunch turtlebot3_gazebo turtlebot3_house.launch
+roslaunch ros-closed-loop-controller-node controller.launch
 ```
 ## Node Architecture
 
