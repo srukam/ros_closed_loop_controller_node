@@ -7,6 +7,6 @@
     <param name="stop_distance" value="0.6"/>
     <param name="safe_distance" value="1.2"/>
     <param name="moving_speed" value="3.0"/>
-    <node pkg="rosbag" type="record" name="record_behavior_autonomy" output="screen" 
-        args="-O behavior_test.bag /cmd_vel /safety_cmd_vel /robot_state /odom /scan"/>
+    <!-- <node pkg="rosbag" type="record" name="record_behavior_autonomy" output="screen"  -->
+        <!-- args="-O behavior_test.bag /cmd_vel /safety_cmd_vel /robot_state /odom /scan"/> -->
 </launch>
