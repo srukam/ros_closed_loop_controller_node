@@ -1,161 +1,149 @@
-# Behavior-Level Autonomous Navigation with Perception–Control Arbitration (ROS)
+# Behavior-Level Autonomous Navigation with LiDAR Safety Arbitration (ROS)
+Deployed and validated on a Fetch Robotics AMR — real hardware, ROS Noetic over WiFi.
 
-## Overview
-# Final Result
+# Final Result - Simmlation & Real Hardware
+![Full hardware demo on Fetch AMR](https://youtube.com/shorts/f36RSIMdlF4?feature=share)
+![sample_results](Videos/demo.gif)
 ![sample_results](Videos/Turtlebot3_robot_trajectory_follower.gif)
 
-This project implements a **behavior-level autonomy stack** for a mobile robot using ROS.
-It combines waypoint-based motion control with a **reactive LiDAR safety layer** and a
-deterministic **velocity arbiter / finite-state behavior layer**.
-
-The system cleanly separates **motion generation**, **safety enforcement**, and
-**command arbitration**, allowing the robot to stop, slow, or proceed safely in the
-presence of obstacles while remaining debuggable, testable, and extensible.
-
-## Key Features
-
+## Overview
+ 
+A behavior-level autonomy stack for a differential-drive mobile robot. Separates motion generation, safety enforcement, and command arbitration into three independent ROS nodes — making the system safe, debuggable, and extensible.
+ 
+Validated in Gazebo simulation (TurtleBot3) and deployed to a **Fetch Robotics AMR** at a community robotics workspace.
+ 
+---
+ 
+## Architecture
+ 
 ```
-Controller Node ──► /desired_cmd_vel ──┐
-├─► Velocity Arbiter ──► /cmd_vel
-LiDAR Safety Node ─► /safety_cmd_vel ──┘
-▲
-│
-/robot_state
-Forward-arc LiDAR obstacle detection
-Distance-based stopping and speed scaling
-Hysteresis to prevent oscillatory behavior
-Time-To-Collision (TTC) based braking
-Velocity arbitration between controller and safety layer
-RViz visualization of safety arc and waypoints
-Runtime-tunable ROS parameters
+Controller Node  ──► /desired_cmd_vel ──┐
+                                        ├──► Velocity Arbiter ──► /cmd_vel ──► Robot
+LiDAR Safety Node ──► /safety_cmd_vel ──┘
+       ▲
+  /base_scan (Fetch) / /scan (simulation)
 ```
-
-**Demo:**
+ 
+### Nodes
+ 
+**`controller_node.py`** — Motion generation
+- Executes waypoint-based trajectories (square, figure-8)
+- Publishes desired velocity on `/desired_cmd_vel`
+- Pure motion logic with no obstacle awareness — safety handled downstream
+- Publishes waypoint markers for RViz visualization
+**`lidar_obstacle_mgmt.py`** — LiDAR safety layer
+- Subscribes to `/scan` (simulation) or `/base_scan` (Fetch hardware)
+- Extracts forward arc LiDAR data with configurable angle bounds
+- Computes minimum obstacle distance and Time-To-Collision (TTC)
+- Publishes speed-limited safety velocity on `/safety_cmd_vel`
+- Visualizes forward safety arc in RViz (color-coded: stop vs safe)
+**`lidar_movement_arbiter.py`** — Velocity arbitration + state machine
+- Subscribes to `/desired_cmd_vel` and `/safety_cmd_vel`
+- Safety always overrides motion — publishes final velocity on `/cmd_vel`
+- Publishes robot state on `/robot_state`: `IDLE | MOVE | SLOW | STOP`
+---
+ 
+## Safety Logic
+ 
+Speed is determined by the more conservative of two metrics:
+ 
+| Condition | Behavior |
+|---|---|
+| Distance ≤ `stop_distance` OR TTC ≤ `ttc_stop` | Hard stop |
+| Distance ≥ `safe_distance` AND TTC ≥ `ttc_slow` | Full speed |
+| Otherwise | Scaled speed (min of distance-based and TTC-based scaling) |
+ 
+Hysteresis prevents oscillation at threshold boundaries.
+ 
+---
+ 
+## Hardware Deployment — Fetch Robotics AMR
+ 
+Deployed to a Fetch AMR over WiFi (ROS Noetic, Ubuntu 20.04 laptop as remote client).
+ 
+Key sim-to-real adaptations:
+- Topic remapped from `/scan` → `/base_scan` (Fetch's Hokuyo UTM-30LX LiDAR)
+- Forward arc indices recalculated for Fetch's 270° LiDAR FOV
+- Velocity limits reduced to 0.2 m/s linear, 0.5 rad/s angular for initial runs
+- Sensor watchdog added — publishes zero velocity on scan timeout
+- `on_shutdown` handler ensures robot stops cleanly on Ctrl+C
+- Nodes launched manually via `rosrun` (roslaunch conflicts with robot's existing roscore)
+---
+ 
+## Parameters
+ 
+All tunable at runtime via ROS parameter server or launch file:
+ 
+| Parameter | Description | Default |
+|---|---|---|
+| `stop_distance` | Hard stop threshold (m) | 0.6 |
+| `safe_distance` | Resume full speed threshold (m) | 1.2 |
+| `moving_speed` | Maximum forward speed (m/s) | 0.6 |
+| `front_min_angle` | Left bound of forward arc (degrees) | -30 |
+| `front_max_angle` | Right bound of forward arc (degrees) | 30 |
+| `ttc_stop` | Emergency stop TTC threshold (seconds) | 0.8 |
+| `ttc_slow` | Resume full speed TTC threshold (seconds) | 1.5 |
+ 
+---
+ 
+## Running in Simulation
+ 
 ```bash
+# Terminal 1 — launch Gazebo
 roslaunch turtlebot3_gazebo turtlebot3_house.launch
+ 
+# Terminal 2 — launch controller stack
 roslaunch ros-closed-loop-controller-node controller.launch
 ```
-## Node Architecture
-
-### 1. Controller Node (controller_node.py)
-
+ 
+## Running on Fetch Hardware
+ 
+```bash
+# Set environment (add to ~/.bashrc for persistence)
+export ROS_MASTER_URI=http://<ROBOT_IP>:11311
+export ROS_IP=$(hostname -I | awk '{print $1}')
+ 
+# Terminal 1 — controller
+rosrun ros_closed_loop_controller_node controller_node.py
+ 
+# Terminal 2 — LiDAR safety
+rosrun ros_closed_loop_controller_node lidar_obstacle_mgmt.py _scan_topic:=/base_scan
+ 
+# Terminal 3 — velocity arbiter
+rosrun ros_closed_loop_controller_node lidar_movement_arbiter.py
 ```
-Generates waypoint-based motion (square / figure-8)
-Publishes desired velocity on /desired_cmd_vel
-Pure motion logic (no obstacle awareness)
-Publishes waypoint markers for RViz
-```
-### 2. LiDAR Safety Node (lidar_obstacle_mgmt.py)
-
-```
-Subscribes to /scan
-Extracts front-arc LiDAR data
-Computes minimum obstacle distance
-Estimates Time-To-Collision (TTC) using current speed
-Applies distance + TTC based speed limiting
-Publishes safety velocity on /safety_cmd_vel
-Visualizes front safety arc in RViz
-```
-### 3. Velocity Arbiter (lidar_movement_arbiter.py)
-
-```
-Subscribes to /desired_cmd_vel and /safety_cmd_vel
-Publishes final velocity on /cmd_vel
-Always enforces safety by limiting linear speed
-Publishes high-level robot state on /robot_state
-States: IDLE, MOVE, SLOW, STOP
-```
-#### • • • • • • • • • • • • • • • • • •
-
-
-## Safety Logic Summary
-
-The robot’s forward velocity is determined using **distance** and
-**time-to-collision (TTC)** metrics.
-
-### Hard Stop
-- Obstacle distance ≤ effective_stop  
-- OR TTC ≤ ttc_stop  
-
-### Full Speed
-- Obstacle distance ≥ safe_distance  
-- AND TTC ≥ ttc_slow  
-
-### Scaled Speed
-- Otherwise, speed is scaled using the minimum of:
-  - Distance-based scaling
-  - TTC-based scaling
-
-This ensures smooth deceleration and prevents late braking at higher speeds.
-
-## Parameters (ROS)
-
-| Parameter        | Description                              | Example |
-|------------------|------------------------------------------|---------|
-| stop_distance    | Base stopping distance                   | 0.6     |
-| safe_distance    | Distance to resume full speed            | 1.2     |
-| moving_speed     | Maximum allowed forward speed            | 0.6     |
-| front_min_angle  | Left bound of front arc (degrees)        | -30     |
-| front_max_angle  | Right bound of front arc (degrees)       | 30      |
-| ttc_stop         | Emergency stop TTC threshold (seconds)   | 0.8     |
-| ttc_slow         | Resume TTC threshold (seconds)           | 1.5     |
-
-All parameters are configurable via launch files.
-
-## Visualization
-
-```
-Front safety arc displayed using visualization_msgs/Marker
-Waypoints rendered in RViz
-Color-coded arc indicates stop vs safe state
-
+ 
+---
+ 
 ## rosbag Support
-Records /cmd_vel, /safety_cmd_vel, /robot_state, /odom, /scan
-Allows offline debugging and deterministic replay
-Supports behavior validation without rerunning simulation
+ 
+```bash
+rosbag record -O run.bag /cmd_vel /safety_cmd_vel /robot_state /odom /scan
+rosbag play run.bag  # offline replay for debugging
 ```
-#### • • • • • • • • •
-
-
+ 
+---
+ 
 ## Design Decisions
-
-```
-Safety always overrides motion commands
-Reactive logic favored over complex prediction
-Velocity arbitration instead of command cancellation
-Explicit state publication for observability
-Deterministic timers for repeatable behavior
-```
-This keeps the system robust, simple, and easy to debug.
-
-## Limitations (Intentional)
-
-```
-No prediction along curved trajectories
-No global or local planner integration
-No dynamic obstacle tracking
-```
-These are addressed in the next project.
-
-## Next Planned Extension
-
-**Predictive Local Planner with Trajectory Collision Checking** - 
-Forward simulation of motion - Curvature-aware safety checks - Planner-aware braking and re-planning
-
+ 
+- **Safety always overrides motion** — arbiter enforces this structurally, not conditionally
+- **Three-node separation** — each node has one responsibility; any can be restarted independently
+- **Explicit state publication** — `/robot_state` makes system behavior observable from any terminal
+- **Reactive over predictive** — intentional; complexity added only where needed (see next project)
+---
+ 
 ## Skills Demonstrated
-
-```
-ROS node architecture and message flow design
-LiDAR data processing and filtering
-Real-time safety and TTC-based control logic
-Velocity arbitration and behavior-level autonomy
-Simulation debugging and rosbag-based validation
-```
+ 
+- ROS node architecture, pub/sub message flow, parameter server
+- LiDAR data processing — forward arc extraction, sector-wise range filtering
+- Time-To-Collision computation and distance-based velocity scaling
+- Velocity arbitration and behavior-level finite state machine
+- Sim-to-real deployment on a Fetch Robotics AMR
+- Hardware debugging: ROS distributed networking, safety interlock diagnosis, topic namespace management
+---
+ 
 ## Status
-
-✅ Complete and stable 🚀 Extended in next project
-
-#### • • • • • • • • • • •
-
-
-
+ 
+✅ Complete and validated on real hardware
+🔧 Next: Predictive local planner with forward trajectory simulation and curvature-aware collision checking
+ 
